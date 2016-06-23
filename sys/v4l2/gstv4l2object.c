@@ -3361,12 +3361,12 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
   if (v4l2_ioctl (fd, VIDIOC_G_PARM, &streamparm) < 0)
     goto get_parm_failed;
 
-  GST_VIDEO_INFO_FPS_N (&info) =
-      streamparm.parm.capture.timeperframe.denominator;
-  GST_VIDEO_INFO_FPS_D (&info) = streamparm.parm.capture.timeperframe.numerator;
+  GST_VIDEO_INFO_FPS_N (&info) = 0;
+  GST_VIDEO_INFO_FPS_D (&info) = 1;
 
   if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE
       || v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+#if 0
     GST_DEBUG_OBJECT (v4l2object->element, "Got framerate: %u/%u",
         streamparm.parm.capture.timeperframe.denominator,
         streamparm.parm.capture.timeperframe.numerator);
@@ -3407,9 +3407,9 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
       GST_WARNING_OBJECT (v4l2object->element,
           "Reuse caps framerate %u/%u - fix v4l2 capture driver", fps_n, fps_d);
     }
-
-    GST_VIDEO_INFO_FPS_N (&info) = fps_n;
-    GST_VIDEO_INFO_FPS_D (&info) = fps_d;
+#endif
+    GST_VIDEO_INFO_FPS_N (&info) = 0;
+    GST_VIDEO_INFO_FPS_D (&info) = 1;
   }
 
 done:
