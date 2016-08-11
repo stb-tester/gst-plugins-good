@@ -1143,12 +1143,14 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer)
   GstV4l2MemoryGroup *group;
   gint i;
 
-  if ((res = gst_v4l2_buffer_pool_poll (pool)) != GST_FLOW_OK)
-    goto poll_failed;
+  do {
+    if ((res = gst_v4l2_buffer_pool_poll (pool)) != GST_FLOW_OK)
+      goto poll_failed;
 
-  GST_LOG_OBJECT (pool, "dequeueing a buffer");
+    GST_LOG_OBJECT (pool, "dequeueing a buffer");
 
-  res = gst_v4l2_allocator_dqbuf (pool->vallocator, &group);
+    res = gst_v4l2_allocator_dqbuf (pool->vallocator, &group);
+  } while (res == GST_V4L2_FLOW_CORRUPTED_BUFFER);
   if (res == GST_FLOW_EOS)
     goto eos;
   if (res != GST_FLOW_OK)

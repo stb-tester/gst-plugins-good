@@ -1311,6 +1311,13 @@ gst_v4l2_allocator_dqbuf (GstV4l2Allocator * allocator,
     UNSET_QUEUED (group->buffer);
   }
 
+  if (buffer.flags & V4L2_BUF_FLAG_ERROR) {
+    GST_WARNING_OBJECT (allocator,
+        "v4l2: Dequeued buffer with error flag set, reenqueuing");
+    gst_v4l2_allocator_qbuf (allocator, group);
+    return GST_V4L2_FLOW_CORRUPTED_BUFFER;
+  }
+
   if (V4L2_TYPE_IS_MULTIPLANAR (allocator->type)) {
     group->buffer.m.planes = group->planes;
     memcpy (group->planes, buffer.m.planes, sizeof (planes));
