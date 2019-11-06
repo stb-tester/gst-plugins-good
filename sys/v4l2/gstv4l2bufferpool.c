@@ -1036,8 +1036,11 @@ again:
     }
   }
 
-  if (gst_poll_fd_has_error (pool->poll, &pool->pollfd))
-    goto select_error;
+  if (gst_poll_fd_has_error (pool->poll, &pool->pollfd)) {
+    GST_WARNING_OBJECT (pool,
+        "polling %i: File descriptor has error, continuing so we'll find out "
+        "what that error is", pool->pollfd.fd);
+  }
 
 done:
   return GST_FLOW_OK;
