@@ -824,6 +824,20 @@ gst_v4l2src_change_state (GstElement * element, GstStateChange transition)
   return ret;
 }
 
+/* Whether @clock's time is CLOCK_MONOTONIC, the clock that drivers use for
+ * buffer timestamps, give or take its calibration. */
+static gboolean
+gst_v4l2src_clock_is_monotonic (GstClock * clock)
+{
+  GstClockType clock_type;
+
+  if (!GST_IS_SYSTEM_CLOCK (clock))
+    return FALSE;
+
+  g_object_get (clock, "clock-type", &clock_type, NULL);
+  return clock_type == GST_CLOCK_TYPE_MONOTONIC;
+}
+
 static GstFlowReturn
 gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
 {
@@ -834,6 +848,7 @@ gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
   GstClock *clock;
   GstClockTime abs_time, base_time, timestamp, duration;
   GstClockTime delay;
+  GstClockTime clock_timestamp = GST_CLOCK_TIME_NONE;
   GstMessage *qos_msg;
   gboolean half_frame;
 
@@ -870,7 +885,6 @@ gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
   /* sample pipeline clock */
   if (clock) {
     abs_time = gst_clock_get_time (clock);
-    gst_object_unref (clock);
   } else {
     abs_time = GST_CLOCK_TIME_NONE;
   }
@@ -879,6 +893,7 @@ retry:
   if (!v4l2src->has_bad_timestamp && timestamp != GST_CLOCK_TIME_NONE) {
     struct timespec now;
     GstClockTime gstnow;
+    gboolean monotonic = TRUE;
 
     /* v4l2 specs say to use the system time although many drivers switched to
      * the more desirable monotonic time. We first try to use the monotonic time
@@ -889,6 +904,7 @@ retry:
     if (timestamp > gstnow || (gstnow - timestamp) > (10 * GST_SECOND)) {
       /* very large diff, fall back to system time */
       gstnow = g_get_real_time () * GST_USECOND;
+      monotonic = FALSE;
     }
 
     /* Detect buggy drivers here, and stop using their timestamp. Failing any
@@ -924,6 +940,21 @@ retry:
     /* Save last timestamp for sanity checks */
     v4l2src->last_timestamp = timestamp;
 
+    /* If the pipeline clock is CLOCK_MONOTONIC too we can convert the
+     * timestamp directly.  Going via the delay since "now" would be wrong by
+     * however long we were preempted between sampling the pipeline clock
+     * above and CLOCK_MONOTONIC here.  Not with gst_clock_adjust_unlocked():
+     * that never returns less than the clock's last time, which is "now"
+     * since we sampled it above. */
+    if (clock && monotonic && gst_v4l2src_clock_is_monotonic (clock)) {
+      GstClockTime cinternal, cexternal, cnum, cdenom;
+
+      gst_clock_get_calibration (clock, &cinternal, &cexternal, &cnum,
+          &cdenom);
+      clock_timestamp = gst_clock_adjust_with_calibration (clock, timestamp,
+          cinternal, cexternal, cnum, cdenom);
+    }
+
     GST_DEBUG_OBJECT (v4l2src, "ts: %" GST_TIME_FORMAT " now %" GST_TIME_FORMAT
         " delay %" GST_TIME_FORMAT, GST_TIME_ARGS (timestamp),
         GST_TIME_ARGS (gstnow), GST_TIME_ARGS (delay));
@@ -935,9 +966,17 @@ retry:
       delay = 0;
   }
 
+  if (clock)
+    gst_object_unref (clock);
+
   /* set buffer metadata */
 
-  if (G_LIKELY (abs_time != GST_CLOCK_TIME_NONE)) {
+  if (G_LIKELY (clock_timestamp != GST_CLOCK_TIME_NONE)) {
+    if (clock_timestamp > base_time)
+      timestamp = clock_timestamp - base_time;
+    else
+      timestamp = 0;
+  } else if (G_LIKELY (abs_time != GST_CLOCK_TIME_NONE)) {
     /* the time now is the time of the clock minus the base time */
     timestamp = abs_time - base_time;
 
